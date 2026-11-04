@@ -1,0 +1,2004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LærbarXR Teacher Dashboard</title>
+    <!-- JSZip til at læse .lxr/.zip-pakker -->
+    <script src="vendor/jszip.min.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        :root{
+          --bg:#f8f9fa;
+          --surface:#ffffff;
+          --border:#e1e4e8;
+          --text:#24292f;
+          --accent:#0969da;
+          --accent-hover:#0860ca;
+          --green:#1a7f37;
+          --red:#d1242f;
+          --muted:#6e7781;
+          --grid:#e8eaed;
+          --shadow:0 1px 3px rgba(31,35,40,0.12);
+          --shadow-lg:0 8px 24px rgba(140,149,159,0.2);
+        }
+        body{
+          font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+          background:var(--bg);color:var(--text);height:100vh;overflow:hidden
+        }
+
+        /* Layout */
+        .app{display:flex;height:100vh}
+        .panel{
+            width:380px; /* Samme bredde som i Builder */
+            background:var(--surface);
+            border-right:1px solid var(--border);
+            display:flex;
+            flex-direction:column;
+            box-shadow:var(--shadow)
+        }
+        .canvas-wrap{
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            position:relative;
+            overflow:hidden;
+            background:var(--bg);
+            background-image:radial-gradient(circle,#d4d4d8 1px,transparent 1px);
+            background-size:20px 20px;
+        }
+        .canvas{
+            width:100%;flex:1;min-height:0;position:relative;
+            overflow-y:auto;
+        }
+
+        /* Paneler */
+        .panel-header{padding:20px;border-bottom:1px solid var(--border)}
+        .panel-header h1{font-size:20px;font-weight:600;margin-bottom:4px}
+        .panel-header p{font-size:13px; color:var(--muted)}
+        .panel-content{flex:1;overflow-y:auto;padding:16px}
+        .panel-footer{padding:16px;border-top:1px solid var(--border);background:#fafbfc}
+
+        /* Knapper og felter */
+        .btn{
+          background:var(--accent);border:none;border-radius:6px;padding:8px 16px;
+          color:#fff;cursor:pointer;font-size:13px;font-weight:500;
+          transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;gap:6px
+        }
+        .btn:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:var(--shadow)}
+        .btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+        .btn.secondary:hover{background:#f6f8fa;border-color:var(--accent)}
+        .btn.success{background:var(--green)}
+        .btn:disabled{opacity:0.5;cursor:not-allowed}
+        
+        input[type="file"] { display: none; }
+        /* Labelen er selve knappen. Behold flex, ellers strækkes SVG'en (w-4/h-4
+           uden Tailwind) ud over hele panelet. */
+        .file-upload-label {
+            display: inline-flex; align-items: center; justify-content: center;
+            gap: 6px; width: 100%; text-align: center;
+        }
+        .file-upload-label svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+        label{
+          display:block;margin:0 0 6px;font-size:12px;font-weight:600;color:var(--text)
+        }
+
+        .field-group{
+          background:var(--surface);border:1px solid var(--border);
+          border-radius:8px;padding:16px;margin-bottom:16px
+        }
+        .field-group h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text)}
+        
+        /* Sessionsknapper */
+        #session-controls {
+            margin-top: 12px;
+        }
+
+        /* Liste over sessioner */
+        .session-list {
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .session-item {
+            background: #f6f8fa;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .session-item:hover {
+            border-color: var(--accent-hover);
+            background: #f0f6ff;
+        }
+        .session-item.selected {
+            border-color: var(--accent);
+            background: #e6f0ff;
+            box-shadow: 0 0 0 3px rgba(9,105,218,0.1);
+        }
+        .session-item h4 {
+            font-size: 14px; font-weight: 600; color: var(--text);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .session-meta {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px; color: var(--muted); margin-top: 8px;
+        }
+        .join-code {
+            font-weight: 600; color: var(--accent); letter-spacing: 1px;
+        }
+        /* SVG-ikonerne har ingen egen størrelse */
+        .session-meta svg, .monitor-header svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+        /* Deltagergitter */
+        .participant-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            padding: 24px;
+        }
+        .participant-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        .participant-card-content {
+            padding: 16px;
+        }
+        .participant-header {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .participant-name {
+            font-size: 16px; font-weight: 600; color: var(--text);
+        }
+        .participant-status {
+            font-size: 11px; font-weight: 500;
+            padding: 4px 10px; border-radius: 12px;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .status-ready { background-color: #f3f4f6; color: #4b5563; }
+        .status-active { background-color: #dcfce7; color: #15803d; }
+        .status-inactive { background-color: #fef9c3; color: #a16207; }
+        .status-done { background-color: #dbeafe; color: #1d4ed8; }
+        .status-incomplete { background-color: #fee2e2; color: #b91c1c; }
+
+        /* Opsummering pr. hold, beregnet ud fra de indlæste resultater */
+        .group-summary { display:flex; flex-wrap:wrap; gap:12px; }
+        .group-card {
+            background:var(--surface); border:1px solid var(--border); border-radius:10px;
+            padding:12px 14px; min-width:180px; box-shadow:var(--shadow);
+        }
+        .group-card h4 { font-size:13px; font-weight:600; margin-bottom:8px; }
+        .group-card .gstat { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:4px; }
+        .group-card .gstat b { color:var(--text); font-weight:600; }
+        
+        .participant-status svg { width: 14px; height: 14px; }
+
+        .participant-info {
+            margin-top: 12px;
+            font-size: 13px; color: var(--muted);
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .info-item {
+            display: flex; align-items: center; gap: 8px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .info-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+        .info-item span { overflow: hidden; text-overflow: ellipsis; }
+        .info-item .video-name {
+            font-style: italic;
+            color: var(--muted);
+            margin-left: 22px; /* Rykket ind under scenetitlen */
+            font-size: 12px;
+        }
+
+        /* Pladsholder */
+        .placeholder {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100%; text-align: center;
+            color: var(--muted);
+        }
+        .placeholder svg {
+            width: 48px; height: 48px; margin-bottom: 16px;
+        }
+        .placeholder h2 {
+            font-size: 18px; font-weight: 600; color: var(--text);
+        }
+        .placeholder p {
+            font-size: 14px; margin-top: 4px;
+        }
+        .placeholder .join-code {
+            font-size: 20px;
+            padding: 8px 16px;
+            background: var(--surface);
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+        
+        /* Overvågningshoved */
+        .monitor-header {
+            padding: 16px 24px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .monitor-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .monitor-header .btn.success {
+            font-size: 14px;
+            padding: 10px 20px;
+        }
+
+        /* Tablet/telefon: kolonnerne stables, hele siden scroller og panelet går
+           i fuld bredde. Ellers lå gitteret uden for skærmen under ~760px. */
+        @media (max-width: 900px) {
+            body { height: auto; overflow: auto; }
+            .app { flex-direction: column; height: auto; min-height: 100vh; }
+            .panel { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+            .panel-content { max-height: none; }
+            .canvas-wrap { min-height: 60vh; }
+            .participant-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); padding: 16px; }
+            .monitor-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+        }
+        @media (max-width: 480px) {
+            .participant-grid { grid-template-columns: 1fr; }
+            .group-card { min-width: 100%; }
+        }
+        /* Livekort */
+        .map-tabs { display:flex; gap:6px; padding:10px 16px; background:var(--surface); border-bottom:1px solid var(--border); align-items:center; flex-wrap:wrap; }
+        .map-tab { padding:6px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:#f6f8fa; color:var(--text); }
+        .map-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+        .map-canvas-outer { position:relative; width:100%; flex:1; min-height:0; overflow:auto; background:var(--bg); }
+        .map-canvas-inner { position:relative; }
+        .map-node { position:absolute; width:160px; height:120px; border-radius:12px; background:var(--surface); border:2px solid var(--border); box-shadow:var(--shadow); padding:10px; box-sizing:border-box; overflow:hidden; }
+        .map-node.start { border-color:var(--green); }
+        .map-node .map-node-title { font-size:12px; font-weight:600; color:var(--text); }
+        .map-node .map-node-type { font-size:10px; color:var(--muted); text-transform:uppercase; margin-top:4px; }
+        .map-dot { position:absolute; width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,0.3); border:2px solid #fff; z-index:20; }
+        .map-dot.waiting { background:#a16207; }
+        .map-dot.done { background:#4b5563; }
+        .map-dot.offline { background:#9ca3af; opacity:0.7; }
+        .map-legend { display:flex; gap:14px; padding:8px 16px; font-size:11px; color:var(--muted); background:var(--surface); border-bottom:1px solid var(--border); }
+        .map-legend span { display:flex; align-items:center; gap:5px; }
+        .map-legend i { width:10px; height:10px; border-radius:50%; display:inline-block; }
+        .map-node.scene-green { background:#dcfce7; border-color:#16a34a; }
+        .map-node.scene-red { background:#fee2e2; border-color:#dc2626; }
+        .map-node .map-node-q { font-size:10px; color:var(--text); margin-top:4px; line-height:1.25; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+        .map-node .map-node-res { font-size:11px; font-weight:700; color:var(--text); position:absolute; left:10px; right:10px; bottom:16px; }
+        .map-node .map-node-bar { position:absolute; left:10px; right:10px; bottom:8px; }
+        .qstats { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 14px; }
+        .map-qstats { border-radius:0; border-left:none; border-right:none; border-top:none; max-height:45vh; overflow:auto; flex:none; }
+        .hs-details { margin-top:8px; border-top:1px solid var(--grid); padding-top:6px; }
+        .hs-details summary { cursor:pointer; font-size:13px; font-weight:600; }
+        .hs-table { border-collapse:collapse; width:100%; margin-top:6px; font-size:12px; }
+        .hs-table th, .hs-table td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--grid); vertical-align:top; }
+        .hs-table th { font-weight:600; color:var(--muted); white-space:nowrap; }
+        .hs-table td.hs-name { font-weight:600; white-space:nowrap; }
+        .hs-table .pk-right { color:#15803d; }
+        .hs-table .pk-wrong { color:#b91c1c; }
+        .hs-table .hs-muted { color:var(--muted); }
+        .qstats-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; margin-bottom:6px; }
+        .qstats-head select { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:12px; }
+        .qhint { font-size:11px; color:var(--muted); }
+        .qrow { display:grid; grid-template-columns:auto 1fr auto; gap:2px 10px; align-items:center; padding:5px 0; border-top:1px solid var(--grid); font-size:12px; }
+        .qrow .qnum { font-weight:600; white-space:nowrap; }
+        .qrow .qtext { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+        .qrow .qres { font-weight:700; white-space:nowrap; }
+        .qrow .qbar { grid-column:1 / -1; }
+        .qopts { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+        .qopt { font-size:11px; padding:2px 8px; border-radius:10px; border:1px solid; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+        .qopt b { margin-left:4px; }
+        .qopt.right { background:#dcfce7; border-color:#86efac; color:#14532d; }
+        .qopt.wrong { background:#fee2e2; border-color:#fca5a5; color:#7f1d1d; }
+        .qopt.neutral { background:#f6f8fa; border-color:var(--border); color:var(--text); }
+        .qopt.none { opacity:0.55; }
+        .participant-picks { margin-top:10px; padding-top:8px; border-top:1px solid var(--grid); font-size:12px; display:flex; flex-direction:column; gap:3px; }
+        .participant-picks .pk-right { color:#15803d; }
+        .participant-picks .pk-wrong { color:#b91c1c; }
+        .qbar { display:flex; height:5px; border-radius:3px; overflow:hidden; background:var(--grid); }
+        .qbar i { display:block; height:100%; }
+        .map-all-done-banner { padding:10px 16px; font-size:13px; font-weight:600; color:#166534; background:#dcfce7; border-bottom:1px solid #bbf7d0; }
+
+        /* Det tager tid at åbne en simulation: en .lxr er næsten kun video (fx
+           ~14 KB project.json og ~53 MB klip), og JSZip skal læse det hele, før
+           scenerne kan vises. På ældre maskiner ~40 s. Indikatoren følger selve
+           arbejdet (App.showBusy/hideBusy), ikke en timer som status-toasten. */
+        #busy-overlay { position:fixed; inset:0; z-index:1002; display:flex; align-items:center; justify-content:center; background:rgba(27,31,36,0.45); }
+        #busy-overlay[hidden] { display:none; }
+        #busy-overlay .busy-card { display:flex; align-items:center; gap:16px; max-width:min(440px,86vw); padding:22px 28px; background:var(--surface); color:var(--text); border-radius:12px; box-shadow:var(--shadow-lg); }
+        #busy-overlay .busy-spinner { flex:none; width:22px; height:22px; border-radius:50%; border:3px solid var(--border); border-top-color:var(--accent); animation:busy-spin 0.9s linear infinite; }
+        #busy-overlay .busy-title { font-size:15px; font-weight:600; }
+        #busy-overlay .busy-hint { margin-top:3px; font-size:12px; color:var(--muted); }
+        @keyframes busy-spin { to { transform:rotate(360deg); } }
+        @media (prefers-reduced-motion:reduce) { #busy-overlay .busy-spinner { animation-duration:2.4s; } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Venstre panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <h1>LærbarXR Dashboard</h1>
+                <p>Monitor live sessions and participants</p>
+            </div>
+            
+            <div class="panel-content">
+                <!-- Vælg simulation -->
+                <div class="field-group">
+                    <h3>Start New Session</h3>
+                    <input type="file" id="session-file-input" accept=".zip" onchange="App.handleFileUpload(event)">
+                    <label for="session-file-input" class="btn success file-upload-label" style="width: 100%;">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>Vælg simulation</span>
+                    </label>
+                </div>
+
+                <!-- Importér resultater fra headsets -->
+                <div class="field-group">
+                    <h3>Import Headset Results</h3>
+                    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">
+                        Load the <code>*_eval.json</code> files the player saves when a
+                        headset finishes. Select several at once to build the whole class.
+                    </p>
+                    <input type="file" id="results-file-input" accept=".json" multiple onchange="App.importResults(event)">
+                    <label for="results-file-input" class="btn secondary file-upload-label" style="width:100%">
+                        <span>Import results (.json)</span>
+                    </label>
+                </div>
+
+                <!-- Live-relay (valgfri) -->
+                <div class="field-group" id="live-control-group">
+                    <h3>Live Monitoring</h3>
+                    <p id="relay-status-text" style="font-size:12px;color:var(--muted);margin-bottom:10px">
+                        Checking for a local relay…
+                    </p>
+                    <!-- Vises kun, når relayet kræver lærernøgle og denne computer
+                         ikke har den endnu. Den huskes bagefter. -->
+                    <div id="teacher-key-box" style="display:none;margin-bottom:10px">
+                        <label for="teacher-key-input">Lærer-nøgle</label>
+                        <div style="display:flex;gap:6px">
+                            <input id="teacher-key-input" type="password" autocomplete="off" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px" onkeydown="if(event.key==='Enter')App.saveTeacherKey()">
+                            <button class="btn" onclick="App.saveTeacherKey()">Gem</button>
+                        </div>
+                    </div>
+                    <div id="live-control-body" style="display:none">
+                        <label for="start-group-select">Vælg hold</label>
+                        <select id="start-group-select" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;font-size:13px"></select>
+                        <!-- De to knapper styrer lærerens eget hold: grøn start, rød
+                             stop. "Start All Headsets" er hvid, så den fremstår som
+                             den sekundære handling. -->
+                        <button class="btn success" style="width:100%;margin-bottom:8px" onclick="App.sendCommand('group','start')">Start mit hold</button>
+                        <button class="btn secondary" style="width:100%;margin-bottom:8px" onclick="App.sendCommand('all','start')">Start All Headsets</button>
+                        <div style="height:1px;background:var(--border);margin:10px 0"></div>
+                        <button class="btn" style="width:100%;margin-bottom:8px;background:var(--red)" onclick="App.sendCommand('group','stop')">Afslut mit hold</button>
+                        <button class="btn secondary" style="width:100%;margin-bottom:8px" onclick="App.sendCommand('all','stop')">■ End All Headsets Now</button>
+                        <button class="btn" style="width:100%" onclick="App.collectAllNow()">⬇ Collect Data From All Headsets Now</button>
+                        <p style="font-size:11px;color:var(--muted);margin-top:6px">Ends this map's run and pulls a CSV, even if some headsets already left the room.</p>
+                    </div>
+                </div>
+
+
+                <!-- Ugentlig CSV-eksport -->
+                <div class="field-group">
+                    <h3>Ugentlig CSV-eksport</h3>
+                    <p id="weekly-export-note" style="font-size:12px;color:var(--muted);margin-bottom:10px"></p>
+                    <button class="btn secondary" style="width:100%" onclick="App.weeklyExport()">⬇ Hent ugens CSV</button>
+                </div>
+
+                <!-- Sessioner -->
+                <div class="field-group">
+                    <h3>Live Sessions</h3>
+                    <div id="session-list" class="session-list">
+                        <p id="no-sessions-msg" style="font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0;">
+                            Upload a session to begin monitoring.
+                        </p>
+                    </div>
+                    <div id="session-controls"></div>
+                </div>
+            </div>
+            
+            <div class="panel-footer">
+                <p style="font-size: 12px; color: var(--muted); text-align: center;">
+                    LærbarXR Teacher v1.0.0
+                </p>
+            </div>
+        </div>
+        
+        <!-- Hovedområde -->
+        <div class="canvas-wrap">
+            <div id="mapTabs" class="map-tabs" style="display:none"></div>
+            <div id="mapLegend" class="map-legend" style="display:none">
+                <span><i style="background:var(--accent)"></i> Running</span>
+                <span><i style="background:#a16207"></i> Waiting for start</span>
+                <span><i style="background:#4b5563"></i> Done</span>
+                <span><i style="background:#9ca3af"></i> Offline</span>
+            </div>
+            <div id="mapAllDoneBanner" class="map-all-done-banner" style="display:none"></div>
+            <div id="mapStats" class="qstats map-qstats" style="display:none">
+                <div class="qstats-head"><b>Svar pr. spørgsmål</b>
+                    <select id="mapStatsHold" onchange="App.setStatsHold(this.value)"></select>
+                    <span class="qhint">Første svar pr. headset · opdateres live</span></div>
+                <div class="qrows" id="mapStatsRows"></div>
+                <!-- Svar pr. headset på kortoversigten. Kun indholdet gentegnes ved
+                     hver poll, så <details> bevarer åben/lukket. -->
+                <details id="mapPerHeadset" class="hs-details" open>
+                    <summary>Svar pr. headset (<span id="mapPerHeadsetCount">0</span>)</summary>
+                    <div id="mapPerHeadsetBody"></div>
+                </details>
+            </div>
+            <div id="canvas" class="canvas">
+            </div>
+            <div id="mapCanvasOuter" class="map-canvas-outer" style="display:none">
+                <div id="mapCanvasInner" class="map-canvas-inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status-toast -->
+    <div class="status" id="status"></div>
+
+    <!-- Bliver stående, til simulationen er åbnet -->
+    <div id="busy-overlay" hidden role="status" aria-live="polite">
+        <div class="busy-card">
+            <div class="busy-spinner"></div>
+            <div>
+                <div class="busy-title" id="busy-text">Åbner simulationen…</div>
+                <div class="busy-hint">Dette kan tage op til flere minutter.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Tilstand ---
+        // Cloud-relayet (Cloudflare Worker). Sæt til '' for at bruge en lokal relay.py.
+        const RELAY_BASE = 'https://laerbarxr-relay.haulik-mhk.workers.dev';
+        const STORAGE_KEY = 'lxr_dashboard_sessions_v1';
+        const AppState = {
+            liveSessions: [],
+            selectedSessionId: null,
+            relayAvailable: false,
+            liveHeadsets: [],
+            pinnedMapIds: [],
+            activeMapId: null,
+            resultsSince: 0,
+            viewMode: 'grid' // 'grid' | 'map'
+        };
+
+        // --- Ikoner ---
+        const ICONS = {
+            users: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 016-6h6a6 6 0 016 6v1h-3M16 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>`,
+            clock: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+            video: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 5h11a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z"></path></svg>`,
+            progress: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>`,
+            active: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+            inactive: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+            done: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+            incomplete: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z"></path></svg>`,
+            placeholder: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.07 0a5 5 0 010 7.07m-7.07 0l-2.829-2.829m12.728 0l2.829 2.829M12 12a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>`
+        };
+
+        // --- DOM ---
+        const canvas = document.getElementById('canvas');
+        const sessionList = document.getElementById('session-list');
+        const noSessionsMsg = document.getElementById('no-sessions-msg');
+        const sessionControls = document.getElementById('session-controls');
+        
+        // --- App ---
+        const App = {
+            init: function() {
+                App.restoreSessions();       // gendan indlæste data efter genindlæsning
+                // 7-dages-vinduet ryddes allerede ved opstart, så gamle data
+                // forsvinder, uanset om nogen husker at slette dem.
+                const pruned = App.pruneOldData();
+                if (AppState.liveSessions.length && !AppState.selectedSessionId) {
+                    AppState.selectedSessionId = AppState.liveSessions[0].id;
+                }
+                App.renderSessionList();
+                App.renderMonitorView();
+                App.renderExportPanel();
+                App.initRelay();
+                if (pruned.removedRows || pruned.removedSessions || pruned.removedHeadsets) {
+                    App.showStatus('Ryddet op: data ældre end ' + App.RETENTION_DAYS + ' dage er fjernet.');
+                }
+            },
+
+            handleFileUpload: async function(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                // Bliver stående, til simulationen er på skærmen.
+                App.showBusy('Åbner simulationen…');
+                await App.nextPaint();
+
+                try {
+                    const zip = await JSZip.loadAsync(file);
+
+                    // Loft over antal filer som simpel værn mod zip-bomber og defekte filer.
+                    if (Object.keys(zip.files).length > 500) {
+                        throw new Error('Simulationen indeholder for mange filer.');
+                    }
+
+                    // Kun project.json accepteres. Det gamle fallback, der kørte
+                    // `const flow = {…}` fra index.html gennem new Function(), er
+                    // fjernet: det var kørsel af vilkårlig kode fra en uploadet fil.
+                    const projectFile = zip.file('project.json');
+                    if (!projectFile) {
+                        throw new Error('Not a LærbarXR package — no project.json inside the .zip.');
+                    }
+                    const flow = JSON.parse(await projectFile.async('string'));
+
+                    if (!flow || typeof flow !== 'object' || !Array.isArray(flow.nodes) || !flow.nodes.length || !flow.startNode) {
+                        throw new Error('Session data is invalid.');
+                    }
+                    // Ældre/fremmede pakker kan mangle disse felter, men resten af
+                    // koden (kortene, CSV) regner med dem.
+                    if (!flow.assets) flow.assets = { videos: [], images: [] };
+                    if (!flow.assets.videos) flow.assets.videos = [];
+                    if (!flow.assets.images) flow.assets.images = [];
+                    if (!flow.title) flow.title = file.name.replace(/\.[^.]+$/, '');
+                    flow.nodes.forEach(n => { if (!Array.isArray(n.choices)) n.choices = []; });
+
+                    App.showBusy('Viser simulationen…');
+                    await App.nextPaint();
+
+                    App.startNewLiveSession(flow);
+
+                    // Først nu er kortet tegnet.
+                    await App.nextPaint();
+
+                } catch (err) {
+                    console.error('Failed to load session:', err);
+                    App.showStatus(`Error: ${err.message}`, true);
+                } finally {
+                    App.hideBusy();
+                }
+
+                event.target.value = null;
+            },
+            
+            startNewLiveSession: function(flow) {
+                const newSession = {
+                    ...flow,
+                    id: `live-${Date.now()}`,
+                    // Kun en reference til lærerens egne noter. Ikke en kode, som
+                    // headsets forbinder med; resultater kommer fra *_eval.json.
+                    ref: Math.random().toString(36).substr(2, 6).toUpperCase(),
+                    participants: [],
+                    sessionLog: [], // hændelser til CSV-eksporten
+                    importedKeys: [], // nøgler til at undgå dubletter ved import
+                    // Kontrakten: op til 99 headsets samtidigt.
+                    maxParticipants: 99,
+                    startTime: Date.now(),
+                    status: 'Imported'
+                };
+
+                AppState.liveSessions.push(newSession);
+                App.selectSession(newSession.id);
+                App.renderSessionList();
+                App.persistSessions();
+                App.showStatus(`Simulation "${newSession.title}" klar — importér resultater fra headsets.`);
+            },
+
+            /**
+             * Indlæser en eller flere *_eval.json fra Player og laver dem om til
+             * deltagerrækker og loghændelser til CSV'en.
+             */
+            importResults: async function(event) {
+                const files = Array.from(event.target.files || []);
+                event.target.value = null;
+                if (!files.length) return;
+
+                let session = AppState.liveSessions.find(s => s.id === AppState.selectedSessionId);
+                if (!session) {
+                    App.showStatus('Åbn simulationens .zip først, og importér så dens resultater.', true);
+                    return;
+                }
+
+                if (!session.importedKeys) session.importedKeys = [];
+
+                let imported = 0, skipped = 0, dupes = 0, tooOld = 0;
+                for (const file of files) {
+                    try {
+                        const parsed = JSON.parse(await file.text());
+                        // Player skriver enten et rent array af hændelser eller et
+                        // objekt med hændelser og headset-info. Begge accepteres.
+                        const events = Array.isArray(parsed) ? parsed : parsed.events;
+                        if (!Array.isArray(events)) { skipped++; continue; }
+
+                        const meta = Array.isArray(parsed) ? {} : parsed;
+                        const startEv = events.find(e => e.action === 'session_start') || {};
+                        const name = meta.headsetId || startEv.headsetId ||
+                                     file.name.replace(/_eval\.json$/i, '').replace(/\.json$/i, '');
+                        // Nyere Players skriver `hold`/`simulation` og beholder
+                        // `group`/`scenario` som gamle navne. Læs de nye først.
+                        const group = meta.hold || meta.group || startEv.hold || startEv.group || 'Hold 1';
+                        const startedAt = startEv.started_at || null;
+                        if (App.isTooOld(meta.finished_at || startedAt)) { tooOld++; continue; }
+
+                        // Dubletnøgle: headset + enheds-id + sluttid, så samme fil
+                        // kan importeres igen uden dobbelte rækker.
+                        const dedupeKey = [name, meta.deviceId || '', meta.finished_at || startedAt || file.name].join('|');
+                        if (session.importedKeys.indexOf(dedupeKey) !== -1) { dupes++; continue; }
+
+                        if (session.participants.length >= session.maxParticipants) {
+                            App.showStatus(`Reached the ${session.maxParticipants}-headset limit.`, true);
+                            break;
+                        }
+
+                        // Status ud fra data: Done med session_end, Incomplete uden,
+                        // Excluded hvis headsettet selv afbrød pga. inaktivitet.
+                        // Se App.runToParticipant.
+                        const participant = App.runToParticipant(session, events, meta, name, group, startedAt);
+
+                        session.participants.push(participant);
+                        session.importedKeys.push(dedupeKey);
+                        imported++;
+                    } catch (err) {
+                        console.error('Could not read', file.name, err);
+                        skipped++;
+                    }
+                }
+
+                if (imported) session.status = 'Imported';
+                App.persistSessions();
+                let msg = `Imported ${imported} headset log(s)`;
+                if (dupes) msg += `, ${dupes} already imported (skipped)`;
+                if (skipped) msg += `, ${skipped} unreadable`;
+                if (tooOld) msg += `, ${tooOld} ældre end ${App.RETENTION_DAYS} dage (ikke gemt)`;
+                App.showStatus(msg, !imported && (dupes > 0 || skipped > 0 || tooOld > 0));
+                App.renderSessionList();
+                App.renderMonitorView();
+            },
+
+            /**
+             * Ét gennemløb (*_eval.json fra fil eller live fra relayet) → en
+             * deltagerrække plus dens CSV-rækker. Bruges af både importResults()
+             * og ingestLiveResult(), så de to veje altid er ens.
+             */
+            // Hvilke svar et choice_made valgte. Nyere Players sender indeks,
+            // ældre kun teksten, som så matches.
+            pickIndexes: function(node, ev) {
+                const labels = (node.choices || []).map(c => c.label);
+                if (ev.multi) {
+                    if (Array.isArray(ev.selected_index)) return ev.selected_index.filter(i => Number.isInteger(i) && i >= 0 && i < labels.length);
+                    return (ev.selected || []).map(l => labels.indexOf(l)).filter(i => i >= 0);
+                }
+                if (Number.isInteger(ev.choice_index) && ev.choice_index >= 0 && ev.choice_index < labels.length) return [ev.choice_index];
+                const i = labels.indexOf(ev.choice);
+                return i >= 0 ? [i] : [];
+            },
+
+            runToParticipant: function(session, events, meta, name, group, startedAt) {
+                const endEv = events.find(e => e.action === 'session_end');
+                // Player afbrød selv gennemløbet, fordi headsettet lå stille i
+                // simulationens inaktivitetsgrænse. Rækken vises som Excluded,
+                // men svarene tæller ikke med i statistik eller CSV.
+                const excluded = meta.excluded === true || events.some(e => e.action === 'session_inactive');
+                const participant = {
+                    id: App.newParticipantId(session),
+                    name: name,
+                    group: group,
+                    status: excluded ? 'Excluded' : (endEv ? 'Done' : 'Incomplete'),
+                    nodeIndex: 0,
+                    sessionTime: endEv ? Math.round(endEv.duration_sec || 0) : 0,
+                    startedAtISO: startedAt,
+                    finishedAtISO: meta.finished_at || null,
+                    answered: 0,
+                    correct: 0,
+                    answers: {},  // nodeId → 1/0, første forsøg pr. spørgsmål
+                    picks: {}     // nodeId → [svarindeks] valgt i første forsøg
+                };
+                const nodeTitleOf = id => (session.nodes.find(n => n.id === id) || {}).title || '';
+                if (excluded) {
+                    events.forEach(ev => {
+                        if (ev.action !== 'node_start') return;
+                        const idx = session.nodes.findIndex(n => n.id === ev.node_id);
+                        if (idx !== -1) participant.nodeIndex = idx;
+                    });
+                    const inact = events.find(e => e.action === 'session_inactive') || {};
+                    App.logEvent(session.id, {
+                        type: 'EXCLUDED', participant: name, group: group, nodeTitle: inact.node_title || nodeTitleOf(inact.node_id),
+                        choice: 'Ingen bevægelse i ' + (inact.idle_sec != null ? inact.idle_sec : '?') + ' sek. — ikke med i data',
+                        time: inact.session_time_sec || 0, startedAt: startedAt
+                    });
+                    return participant;
+                }
+                events.forEach(ev => {
+                    if (ev.action === 'node_start') {
+                        const idx = session.nodes.findIndex(n => n.id === ev.node_id);
+                        if (idx !== -1) participant.nodeIndex = idx;
+                        const node = session.nodes[idx] || {};
+                        App.logEvent(session.id, {
+                            type: 'VIEW', participant: name, group: group, nodeTitle: ev.title || node.title || '',
+                            sceneColor: node.sceneColor, time: ev.session_time_sec || 0, startedAt: startedAt
+                        });
+                    } else if (ev.action === 'choice_made') {
+                        // Gamle Player-builds loggede auto-navigation som et valg.
+                        // Det er aldrig et svar.
+                        if (ev.choice === 'auto-nav') {
+                            App.logEvent(session.id, {
+                                type: 'NAV', participant: name, group: group, nodeTitle: nodeTitleOf(ev.node),
+                                choice: 'auto-nav', time: ev.session_time_sec || 0, startedAt: startedAt
+                            });
+                            return;
+                        }
+                        const node = session.nodes.find(n => n.id === ev.node) || {};
+                        participant.answered++;
+                        if (ev.correct === true) participant.correct++;
+                        if (ev.node && !(ev.node in participant.answers)) {
+                            participant.answers[ev.node] = ev.correct === true ? 1 : 0;
+                            participant.picks[ev.node] = App.pickIndexes(node, ev);
+                        }
+                        // Flervalg ("vælg alle rigtige"): valget er alle afkrydsede
+                        // svar. Korrekt kun ved præcis det rigtige sæt; den delvise
+                        // score viser, hvor tæt det var.
+                        const score = ev.multi
+                            ? (ev.hits != null ? ev.hits : 0) + '/' + (ev.total_correct != null ? ev.total_correct : 0) + ' rigtige' +
+                              (ev.wrong_picks ? ', ' + ev.wrong_picks + ' forkert' + (ev.wrong_picks > 1 ? 'e' : '') : '')
+                            : '';
+                        App.logEvent(session.id, {
+                            type: 'ANSWER', participant: name, group: group, nodeTitle: node.title || '',
+                            question: node.question || 'N/A',
+                            choice: ev.choice, correct: ev.correct, score: score,
+                            time: ev.session_time_sec != null ? ev.session_time_sec : 0, startedAt: startedAt
+                        });
+                    } else if (ev.action === 'auto_advance') {
+                        // Almindelig navigation videre i simulationen, ikke et svar.
+                        App.logEvent(session.id, {
+                            type: 'NAV', participant: name, group: group, nodeTitle: nodeTitleOf(ev.node),
+                            choice: 'auto', time: ev.session_time_sec || 0, startedAt: startedAt
+                        });
+                    } else if (ev.action === 'replay') {
+                        App.logEvent(session.id, {
+                            type: 'REPLAY', participant: name, group: group, nodeTitle: ev.node_title || nodeTitleOf(ev.node),
+                            choice: 'Se igen', time: ev.session_time_sec || 0, startedAt: startedAt
+                        });
+                    } else if (ev.action === 'session_end') {
+                        participant.sessionTime = Math.round(ev.duration_sec || 0);
+                        App.logEvent(session.id, {
+                            type: 'FINISH', participant: name, group: group, nodeTitle: (session.nodes[participant.nodeIndex] || {}).title || '',
+                            time: ev.duration_sec || 0, startedAt: startedAt
+                        });
+                    }
+                });
+                return participant;
+            },
+
+            selectSession: function(sessionId) {
+                AppState.selectedSessionId = sessionId;
+                // Kortet er standardvisningen; Grid er et klik væk for svartabellen.
+                if (!AppState.pinnedMapIds.includes(sessionId)) {
+                    if (AppState.pinnedMapIds.length >= 4) AppState.pinnedMapIds.shift();
+                    AppState.pinnedMapIds.push(sessionId);
+                }
+                App.renderSessionList();
+                App.switchToMap(sessionId);
+            },
+
+            renderSessionList: function() {
+                sessionControls.innerHTML = '';
+                
+                if (AppState.liveSessions.length === 0) {
+                    noSessionsMsg.style.display = 'block';
+                    sessionList.innerHTML = '';
+                } else {
+                    noSessionsMsg.style.display = 'none';
+                    let content = '';
+                    AppState.liveSessions.forEach(session => {
+                        const isSelected = session.id === AppState.selectedSessionId;
+                        content += `
+                            <div class="session-item ${isSelected ? 'selected' : ''}" data-session-id="${session.id}">
+                                <h4>${App.esc(session.title)}</h4>
+                                <div class="session-meta">
+                                    <span>${ICONS.users} ${session.participants.length} / ${session.maxParticipants}</span>
+                                    <span class="join-code" title="Session reference for your notes">Ref ${App.esc(session.ref || '')}</span>
+                                </div>
+                                <button class="btn secondary" style="width:100%;margin-top:8px;font-size:11px;padding:6px" onclick="event.stopPropagation(); App.togglePinToMap('${session.id}')">${(AppState.pinnedMapIds||[]).includes(session.id) ? '✅ Watching live — click to stop' : '👁️ Watch this class live'}</button>
+                            </div>
+                        `;
+                    });
+                    sessionList.innerHTML = content;
+
+                    sessionList.querySelectorAll('.session-item').forEach(item => {
+                        item.addEventListener('click', (e) => {
+                            App.selectSession(e.currentTarget.dataset.sessionId);
+                        });
+                    });
+                    
+                    if (AppState.selectedSessionId) {
+                        sessionControls.innerHTML = `
+                            <button id="end-session-btn" class="btn" style="width: 100%; background: var(--red);">
+                                End & Download Results
+                            </button>
+                        `;
+                        document.getElementById('end-session-btn').addEventListener('click', App.endSelectedSession);
+                    }
+                }
+            },
+            
+            /**
+             * Afslutter den valgte session og henter CSV'en
+             */
+            endSelectedSession: function() {
+                if (!AppState.selectedSessionId) return;
+
+                const session = AppState.liveSessions.find(s => s.id === AppState.selectedSessionId);
+                if (!session) return;
+
+                // Sessionen og dens data slettes fra dashboardet efter download.
+                // Bekræft først.
+                const ok = confirm(
+                    `Download the CSV for "${session.title}" and then remove this session ` +
+                    `(${session.participants.length} headset(s)) from the dashboard?\n\n` +
+                    `The downloaded CSV will be the only remaining copy.`);
+                if (!ok) return;
+
+                App.showStatus(`Downloading results and closing session...`);
+                App.downloadSessionData(session);
+
+                AppState.liveSessions = AppState.liveSessions.filter(s => s.id !== AppState.selectedSessionId);
+                AppState.selectedSessionId = AppState.liveSessions[0] ? AppState.liveSessions[0].id : null;
+                App.persistSessions();
+
+                App.renderSessionList();
+                App.renderMonitorView();
+            },
+
+            renderMonitorView: function() {
+                const session = AppState.liveSessions.find(s => s.id === AppState.selectedSessionId);
+                
+                if (!session) {
+                    canvas.innerHTML = `
+                        <div class="placeholder">
+                            ${ICONS.placeholder}
+                            <h2>No Session Selected</h2>
+                            <p>Upload a new session or select a live one from the panel.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (session.participants.length === 0) {
+                     canvas.innerHTML = `
+                        <div class="placeholder">
+                            ${ICONS.placeholder}
+                            <h2>No headsets yet</h2>
+                            <p>Import the players' <code>*_eval.json</code> result files from the
+                               left panel, or run relay.py and start a class for live data.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const groups = App.getGroups(session);
+                const doneCount = session.participants.filter(p => p.status === 'Done').length;
+                const excludedCount = session.participants.filter(p => p.status === 'Excluded').length;
+
+                // Dashboardet har ingen startknapper pr. hold her; panelet viser i
+                // stedet, hvad der faktisk skete pr. hold (starttider m.m.).
+                const allDone = session.participants.length > 0 && doneCount === session.participants.length;
+                const header = `
+                    <div class="monitor-header">
+                        <h2>${session.participants.length} headset(s) importeret fordelt på ${groups.length} hold
+                            &mdash; ${doneCount} completed, ${excludedCount ? excludedCount + ' udeladt (inaktive), ' : ''}${session.participants.length - doneCount - excludedCount} incomplete</h2>
+                        <span class="join-code" title="Session reference for your notes">Ref ${App.esc(session.ref || '')}</span>
+                    </div>
+                    ${allDone ? `<div class="map-all-done-banner">✓ Everyone has finished — ready to collect results.</div>` : ''}
+                `;
+
+                // Opsummering pr. hold ud fra de indlæste data.
+                let groupPanel = '<div class="group-summary" style="padding:16px 24px 0">';
+                groups.forEach(g => {
+                    const st = App.groupStats(session, g);
+                    groupPanel += `
+                        <div class="group-card">
+                            <h4>${App.esc(g)}</h4>
+                            <div class="gstat"><span>Headsets</span><b>${st.count}</b></div>
+                            <div class="gstat"><span>First start</span><b>${st.firstStart}</b></div>
+                            <div class="gstat"><span>Last finish</span><b>${st.lastFinish}</b></div>
+                            <div class="gstat"><span>Mean duration</span><b>${st.meanDuration}</b></div>
+                            <div class="gstat"><span>Correct answers</span><b>${st.correctRate}</b></div>
+                            <div class="gstat"><span>Completed</span><b>${st.done}/${st.count}</b></div>
+                        </div>`;
+                });
+                groupPanel += '</div>';
+
+                let grid = `<div id="participant-grid" class="participant-grid">`;
+                session.participants.forEach(participant => {
+                    grid += App.createParticipantCardHTML(participant, session);
+                });
+                grid += `</div>`;
+
+                const qStats = App.questionStatsHTML(session, true);
+                canvas.innerHTML = header + groupPanel + (qStats ? `<div style="padding:16px 24px 0">${qStats}</div>` : '') + grid;
+            },
+
+            /**
+             * Holdnavne i sessionen, i den rækkefølge de først optræder.
+             */
+            getGroups: function(session) {
+                const seen = [];
+                session.participants.forEach(p => {
+                    const g = p.group || 'Hold 1';
+                    if (seen.indexOf(g) === -1) seen.push(g);
+                });
+                return seen;
+            },
+
+            /**
+             * Statistik pr. hold ud fra resultaterne: antal headsets, første start,
+             * sidste afslutning, gennemsnitlig varighed og andel rigtige svar.
+             */
+            groupStats: function(session, group) {
+                const members = session.participants.filter(p => (p.group || 'Hold 1') === group);
+                const starts = members.map(p => p.startedAtISO).filter(Boolean).map(s => Date.parse(s)).filter(n => !isNaN(n));
+                const finishes = members.map(p => p.finishedAtISO).filter(Boolean).map(s => Date.parse(s)).filter(n => !isNaN(n));
+                const durations = members.filter(p => p.status !== 'Excluded').map(p => p.sessionTime || 0).filter(n => n > 0);
+                const answered = members.reduce((s, p) => s + (p.answered || 0), 0);
+                const correct = members.reduce((s, p) => s + (p.correct || 0), 0);
+                const hhmm = ms => { const d = new Date(ms); return d.toLocaleString(); };
+                const meanDur = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+                return {
+                    count: members.length,
+                    done: members.filter(p => p.status === 'Done').length,
+                    firstStart: starts.length ? hhmm(Math.min.apply(null, starts)) : '—',
+                    lastFinish: finishes.length ? hhmm(Math.max.apply(null, finishes)) : '—',
+                    meanDuration: durations.length ? App.formatTime(meanDur) : '—',
+                    correctRate: answered ? Math.round(100 * correct / answered) + '% (' + correct + '/' + answered + ')' : '—'
+                };
+            },
+
+            createParticipantCardHTML: function(participant, session) {
+                const { nodes, assets } = session;
+                const statusStyles = {
+                    Ready: { icon: ICONS.clock, class: 'status-ready' },
+                    Active: { icon: ICONS.active, class: 'status-active' },
+                    Inactive: { icon: ICONS.inactive, class: 'status-inactive' },
+                    Done: { icon: ICONS.done, class: 'status-done' },
+                    Incomplete: { icon: ICONS.incomplete, class: 'status-incomplete' },
+                    Disconnected: { icon: ICONS.inactive, class: 'status-inactive' },
+                    Excluded: { icon: ICONS.inactive, class: 'status-incomplete' }
+                };
+                const style = statusStyles[participant.status] || statusStyles.Incomplete;
+                
+                // nodeIndex kan være uden for listen, fx lige efter sessionen slutter
+                if (!nodes[participant.nodeIndex]) {
+                     return `
+                        <div id="${participant.id}" class="participant-card">
+                            <div class="participant-card-content">
+                                <div class="participant-header">
+                                    <span class="participant-name">${App.esc(participant.name)}</span>
+                                    <span class="participant-status ${style.class}">
+                                        ${style.icon}
+                                        <span>${App.esc(App.statusLabel(participant.status))}</span>
+                                    </span>
+                                </div>
+                                <div class="participant-info">
+                                    <div class="info-item">
+                                        ${ICONS.clock}
+                                        <span>${App.formatTime(participant.sessionTime)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                const node = nodes[participant.nodeIndex];
+                
+                let videoName = "No Video";
+                if (node.video) {
+                    const videoAsset = assets.videos.find(v => v.id === node.video);
+                    if (videoAsset) {
+                        videoName = videoAsset.name;
+                    } else {
+                        videoName = "Video Asset Missing";
+                    }
+                }
+                
+                return `
+                    <div id="${participant.id}" class="participant-card">
+                        <div class="participant-card-content">
+                            <div class="participant-header">
+                                <span class="participant-name">${App.esc(participant.name)}</span>
+                                <span class="participant-status ${style.class}">
+                                    ${style.icon}
+                                    <span>${App.esc(App.statusLabel(participant.status))}</span>
+                                </span>
+                            </div>
+                            <div class="participant-info">
+                                <div class="info-item">
+                                    ${ICONS.users}
+                                    <span>${App.esc(participant.group || 'Hold 1')}</span>
+                                </div>
+                                <div class="info-item">
+                                    ${ICONS.progress}
+                                    <span>Node ${participant.nodeIndex + 1} of ${nodes.length}</span>
+                                </div>
+                                <div class="info-item">
+                                    ${ICONS.video}
+                                    <span title="${App.attr(node.title)}">${App.esc(node.title)}</span>
+                                </div>
+                                ${node.video ? `<div class="info-item"><span class="video-name" title="${App.attr(videoName)}">${App.esc(videoName)}</span></div>` : ''}
+                                <div class="info-item">
+                                    ${ICONS.clock}
+                                    <span>${App.formatTime(participant.sessionTime)}</span>
+                                </div>
+                            </div>
+                            ${App.participantPicksHTML(participant, session)}
+                        </div>
+                    </div>
+                `;
+            },
+
+            // nodeId → [svarindeks] fra et live-heartbeats svar.
+            livePicks: function(h) {
+                const pk = {};
+                (Array.isArray(h.answers) ? h.answers : []).forEach(x => {
+                    if (x && typeof x.n === 'string' && !(x.n in pk)) pk[x.n] = Array.isArray(x.a) ? x.a.filter(i => Number.isInteger(i)) : [];
+                });
+                return pk;
+            },
+
+            // Én række pr. headset i simulationen: afsluttede gennemløb, og headsets
+            // der stadig spiller, overtager rækken for deres navn.
+            perHeadsetAnswers: function(session, hold) {
+                const rows = {};
+                (session.participants || []).forEach(p => {
+                    rows[p.name] = { name: p.name, hold: p.group || 'Hold 1', status: App.statusLabel(p.status), excluded: p.status === 'Excluded', picks: p.picks || {} };
+                });
+                (AppState.liveHeadsets || []).forEach(h => {
+                    if ((h.simulation || h.scenario) !== session.title) return;
+                    if (h.status === 'done' && rows[h.headsetId]) return;   // resultatet er allerede en række
+                    const st = h.online === false ? 'Offline' : (h.status === 'waiting' ? 'Venter på start' : (h.status === 'done' ? 'Done' : 'I gang'));
+                    rows[h.headsetId] = { name: h.headsetId, hold: h.hold || h.group || 'Hold 1', status: st, excluded: false, picks: App.livePicks(h) };
+                });
+                return Object.values(rows)
+                    .filter(r => !hold || r.hold === hold)
+                    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'da', { numeric: true }));
+            },
+
+            pickCellHTML: function(n, pk) {
+                if (!pk) return '<span class="hs-muted">—</span>';
+                const graded = (n.choices || []).some(c => c.correct === true);
+                const items = pk.map(i => {
+                    const c = (n.choices || [])[i];
+                    if (!c) return '';
+                    const cls = !graded ? '' : (c.correct === true ? 'pk-right' : 'pk-wrong');
+                    return `<span class="${cls}">${graded ? (c.correct === true ? '✓ ' : '✗ ') : ''}${App.esc(c.label)}</span>`;
+                }).filter(Boolean);
+                return items.length ? items.join('<br>') : '<span class="hs-muted">—</span>';
+            },
+
+            perHeadsetTableHTML: function(session, rows) {
+                if (!rows.length) return '<p class="qhint" style="margin-top:6px">Ingen headsets endnu.</p>';
+                const qs = App.questionNodes(session);
+                const head = '<tr><th>Headset</th><th>Hold</th><th>Status</th>' +
+                    qs.map((n, i) => `<th title="${App.attr(n.question || n.title || '')}">Spm. ${i + 1}</th>`).join('') + '</tr>';
+                const body = rows.map(r => '<tr>' +
+                    `<td class="hs-name">${App.esc(r.name)}</td><td>${App.esc(r.hold)}</td><td class="${r.excluded ? 'pk-wrong' : ''}">${App.esc(r.status)}</td>` +
+                    (r.excluded
+                        ? `<td colspan="${qs.length}" class="hs-muted">Ikke med i data (ingen bevægelse)</td>`
+                        : qs.map(n => `<td>${App.pickCellHTML(n, r.picks[n.id])}</td>`).join('')) +
+                    '</tr>').join('');
+                return `<table class="hs-table">${head}${body}</table>`;
+            },
+
+            picksTooltip: function(session, picks) {
+                if (!picks) return '';
+                const lines = App.questionNodes(session).map((n, i) => {
+                    const pk = picks[n.id];
+                    if (!pk) return '';
+                    return `\nSpm. ${i + 1}: ` + pk.map(k => { const c = (n.choices || [])[k]; return c ? ((c.correct === true ? '✓ ' : ((n.choices || []).some(x => x.correct === true) ? '✗ ' : '')) + c.label) : ''; }).filter(Boolean).join(', ');
+                }).join('');
+                return lines;
+            },
+
+            // Headsettets svar pr. spørgsmål (første forsøg).
+            participantPicksHTML: function(participant, session) {
+                if (!participant.picks) return '';
+                const lines = App.questionNodes(session).map((n, qi) => {
+                    const pk = participant.picks[n.id];
+                    if (!pk) return '';
+                    const graded = (n.choices || []).some(c => c.correct === true);
+                    const items = pk.map(i => {
+                        const c = (n.choices || [])[i];
+                        if (!c) return '';
+                        const cls = !graded ? '' : (c.correct === true ? 'pk-right' : 'pk-wrong');
+                        return `<span class="${cls}">${graded ? (c.correct === true ? '✓ ' : '✗ ') : ''}${App.esc(c.label)}</span>`;
+                    }).filter(Boolean).join(', ');
+                    return `<div title="${App.attr(n.question || '')}"><b>Spm. ${qi + 1}:</b> ${items || '—'}</div>`;
+                }).filter(Boolean);
+                return lines.length ? `<div class="participant-picks">${lines.join('')}</div>` : '';
+            },
+            
+            logEvent: function(sessionId, eventData) {
+                const session = AppState.liveSessions.find(s => s.id === sessionId);
+                if (!session) return;
+                // Hændelsens rigtige klokkeslæt = gennemløbets start + session_time_sec,
+                // ikke tidspunktet for importen. Mangler started_at, står feltet tomt.
+                let timestamp = '';
+                if (eventData.startedAt && eventData.time != null) {
+                    const base = Date.parse(eventData.startedAt);
+                    if (!isNaN(base)) timestamp = new Date(base + Number(eventData.time) * 1000).toISOString();
+                }
+                // Markerer at sessionen har fået resultater, så oprydningen kan fjerne
+                // den, når de bliver for gamle, men ikke en simulation der bare ikke
+                // er kørt endnu.
+                session.importedAny = true;
+                session.sessionLog.push({
+                    timestamp: timestamp,
+                    type: eventData.type,
+                    participant: eventData.participant,
+                    group: eventData.group || 'Hold 1',
+                    nodeTitle: eventData.nodeTitle || '',
+                    question: eventData.question || '',
+                    choice: eventData.choice != null ? eventData.choice : '',
+                    correct: eventData.correct,
+                    score: eventData.score || '',
+                    sceneColor: eventData.sceneColor === 'green' || eventData.sceneColor === 'red' ? eventData.sceneColor : '',
+                    time: eventData.time
+                });
+            },
+            
+            // === CSV-id og oprydning ===
+
+            // Små bogstaver, ASCII, uden skilletegn, så værdien kan indgå i MetaID og
+            // filnavne. æ/ø/å omskrives i stedet for at blive fjernet, så to navne
+            // der kun adskiller sig på dem, ikke kolliderer.
+            slug: function(v) {
+                return String(v == null ? '' : v)
+                    .replace(/æ/gi, 'ae').replace(/ø/gi, 'oe').replace(/å/gi, 'aa')
+                    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^A-Za-z0-9]+/g, '')
+                    .slice(0, 40) || 'ukendt';
+            },
+
+            // Lokal tid, ikke UTC: læreren læser sit eget ur, og en session kl.
+            // 23:30 ville ellers havne på dagen før.
+            stamp: function(d) {
+                const p = n => String(n).padStart(2, '0');
+                return {
+                    date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+                    time: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+                };
+            },
+
+            // Logrækkens tidspunkt delt i dato og tid. Tomt, hvis filen ikke havde
+            // en starttid.
+            splitTimestamp: function(iso) {
+                if (!iso) return { date: '', time: '' };
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return { date: '', time: '' };
+                return App.stamp(d);
+            },
+
+            // simulation-dato-tid-headset-nummer, fx
+            // hjertestop-20260925-141530-headset03-007. Almindelig bindestreg
+            // i stedet for tankestreg, så værdien er sikker i filnavne, URL'er og Excel.
+            metaId: function(title, iso, headset, seq) {
+                const d = iso ? new Date(iso) : null;
+                const valid = d && !isNaN(d.getTime());
+                const st = valid ? App.stamp(d) : { date: '', time: '' };
+                return [
+                    App.slug(title),
+                    valid ? st.date.replace(/-/g, '') : 'ukendtdato',
+                    valid ? st.time.replace(/:/g, '') : 'ukendttid',
+                    App.slug(headset),
+                    String(seq).padStart(3, '0')
+                ].join('-');
+            },
+
+            // === Oprydning efter 7 dage ===
+            // Rækker ældre end en uge fjernes, og tomme sessioner med dem. Kører
+            // ved opstart og efter hver import.
+            RETENTION_DAYS: 7,
+            pruneOldData: function() {
+                const cutoff = Date.now() - App.RETENTION_DAYS * 24 * 60 * 60 * 1000;
+                let removedRows = 0, removedSessions = 0, removedHeadsets = 0;
+                (AppState.liveSessions || []).forEach(session => {
+                    if (Array.isArray(session.sessionLog)) {
+                        const before = session.sessionLog.length;
+                        session.sessionLog = session.sessionLog.filter(log => {
+                            if (!log.timestamp) return true;   // rækker uden dato slettes aldrig
+                            const t = Date.parse(log.timestamp);
+                            return isNaN(t) || t >= cutoff;
+                        });
+                        removedRows += before - session.sessionLog.length;
+                    }
+                    // Kortene pr. headset viser også data (tid, svar, score), så de
+                    // skal ryddes sammen med logrækkerne.
+                    if (Array.isArray(session.participants)) {
+                        const before = session.participants.length;
+                        session.participants = session.participants.filter(p => {
+                            const iso = p.finishedAtISO || p.startedAtISO;
+                            if (!iso) return true;
+                            const t = Date.parse(iso);
+                            return isNaN(t) || t >= cutoff;
+                        });
+                        removedHeadsets += before - session.participants.length;
+                    }
+                });
+                const keep = (AppState.liveSessions || []).filter(session => {
+                    const hadRows = Array.isArray(session.sessionLog);
+                    const emptyNow = hadRows && session.sessionLog.length === 0
+                        && (!session.participants || session.participants.length === 0);
+                    // Fjern kun en session, der HAR haft data, ikke en ny uden resultater.
+                    const aged = emptyNow && session.importedAny === true;
+                    if (aged) removedSessions++;
+                    return !aged;
+                });
+                if (removedSessions) {
+                    AppState.liveSessions = keep;
+                    if (!keep.some(s => s.id === AppState.selectedSessionId)) {
+                        AppState.selectedSessionId = keep[0] ? keep[0].id : null;
+                    }
+                }
+                if (removedRows || removedSessions || removedHeadsets) App.persistSessions();
+                return { removedRows, removedSessions, removedHeadsets };
+            },
+
+            // === Ugentlig CSV-eksport ===
+            // Knappen viser, hvornår næste eksport er klar, og kræver en bevidst
+            // bekræftelse for at eksportere før tid. Læreren skal ikke kunne låses
+            // ude af sine egne data.
+            EXPORT_INTERVAL_DAYS: 7,
+            lastExportAt: function() {
+                try {
+                    const v = parseInt(localStorage.getItem('lxr_last_csv_export') || '0', 10);
+                    return isNaN(v) ? 0 : v;
+                } catch (e) { return 0; }
+            },
+            nextExportDue: function() {
+                return App.lastExportAt() + App.EXPORT_INTERVAL_DAYS * 24 * 60 * 60 * 1000;
+            },
+            weeklyExport: function() {
+                const session = AppState.liveSessions.find(s => s.id === AppState.selectedSessionId);
+                if (!session) { App.showStatus('Vælg en simulation først.', true); return; }
+                const due = App.nextExportDue();
+                if (Date.now() < due) {
+                    const when = new Date(due);
+                    const ok = confirm(
+                        'CSV-eksport er tilgængelig én gang om ugen.\n\n' +
+                        'Næste planlagte eksport: ' + when.toLocaleDateString() + ' ' + when.toLocaleTimeString() + '\n\n' +
+                        'Vil du alligevel hente en ekstra kopi nu?');
+                    if (!ok) return;
+                }
+                App.downloadSessionData(session);
+                try { localStorage.setItem('lxr_last_csv_export', String(Date.now())); } catch (e) {}
+                App.renderExportPanel();
+            },
+            renderExportPanel: function() {
+                const el = document.getElementById('weekly-export-note');
+                if (!el) return;
+                const last = App.lastExportAt();
+                if (!last) { el.textContent = 'Ingen eksport hentet endnu. Data gemmes i ' + App.RETENTION_DAYS + ' dage.'; return; }
+                const due = App.nextExportDue();
+                el.textContent = Date.now() >= due
+                    ? 'Klar til ugens eksport. Data gemmes i ' + App.RETENTION_DAYS + ' dage.'
+                    : 'Sidst hentet ' + new Date(last).toLocaleDateString() +
+                      ' · næste ' + new Date(due).toLocaleDateString() +
+                      ' · data gemmes i ' + App.RETENTION_DAYS + ' dage.';
+            },
+
+            /**
+             * Laver og downloader CSV'en for sessionen
+             */
+            downloadSessionData: function(session) {
+                if (!session.sessionLog || session.sessionLog.length === 0) {
+                    App.showStatus("No data to download for this session.", true);
+                    return;
+                }
+                
+                // Blob med korrekt escaping og UTF-8 BOM. En data:-URI blev
+                // afskåret ved '#' og fejlede ved store logs, kommaer i titler
+                // forskød kolonner, og uden BOM viste Excel æ/ø/å forkert.
+                const cell = v => {
+                    if (v === undefined || v === null) return '""';
+                    return '"' + String(v).replace(/"/g, '""') + '"';
+                };
+
+                // De ønskede kolonner først (MetaID, dato, tid, simulation, hold,
+                // headset, svar), derefter de øvrige spor pr. scene.
+                const headers = ["MetaID", "Dato", "Tid", "Simulation", "Hold", "Headset", "Svar",
+                                 "Hændelse", "Scene", "Spørgsmål", "Korrekt", "Sekunder",
+                                 // Nye kolonner tilføjes til sidst, så de eksisterende bliver på plads.
+                                 "Scenefarve", "Delvis score"];
+                const rows = [headers.map(cell).join(",")];
+
+                // MetaID slutter med et løbenummer pr. headset, så rækker i samme
+                // sekund stadig kan skelnes.
+                const seqByHeadset = {};
+
+                session.sessionLog.forEach(log => {
+                    const headset = log.participant || 'Ukendt headset';
+                    seqByHeadset[headset] = (seqByHeadset[headset] || 0) + 1;
+                    const dt = App.splitTimestamp(log.timestamp);
+                    rows.push([
+                        cell(App.metaId(session.title, log.timestamp, headset, seqByHeadset[headset])),
+                        cell(dt.date),                                // dato eller tomt
+                        cell(dt.time),
+                        cell(session.title || ''),
+                        cell(log.group || 'Hold 1'),
+                        cell(headset),
+                        cell(log.choice || ''),
+                        cell(log.type),
+                        cell(log.nodeTitle || ''),
+                        cell(log.question || ''),
+                        cell(log.correct !== undefined ? log.correct : ''),
+                        cell(log.time != null ? Math.round(log.time) : ''),
+                        cell(log.sceneColor === 'green' ? 'grøn' : (log.sceneColor === 'red' ? 'rød' : '')),
+                        cell(log.score || '')
+                    ].join(","));
+                });
+
+                const csv = '\uFEFF' + rows.join("\r\n") + "\r\n"; // BOM, så Excel læser UTF-8
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `${App.slug(session.title || 'simulation')}_${App.stamp(new Date()).date}_resultater.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+            },
+
+            // --- Gem i localStorage ---
+            // Så en genindlæsning eller lukket fane ikke mister indlæste resultater.
+            // Kun data (deltagere, log, simulationsinfo), aldrig medier.
+            persistSessions: function() {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                        sessions: AppState.liveSessions,
+                        selectedSessionId: AppState.selectedSessionId
+                    }));
+                } catch (e) {
+                    // Fuld kvote / privat tilstand: fortsæt uden at gemme.
+                    App.showStatus('Could not save session to this browser (storage full).', true);
+                }
+            },
+
+            restoreSessions: function() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    if (!raw) return;
+                    const parsed = JSON.parse(raw);
+                    if (parsed && Array.isArray(parsed.sessions)) {
+                        AppState.liveSessions = parsed.sessions;
+                        AppState.selectedSessionId = parsed.selectedSessionId || null;
+                    }
+                } catch (e) { /* ødelagt data, start forfra */ }
+            },
+
+            // --- Hjælpefunktioner ---
+
+            // Titler og navne kommer fra uploadede filer og skal escapes, før de
+            // sættes ind i innerHTML. Anførselstegn og <> forekommer i kursusnavne.
+            esc: function(s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[c]));
+            },
+            attr: function(s) { return App.esc(s); },
+
+            statusLabel: function(status) {
+                return status === 'Excluded' ? 'Udeladt (inaktiv)' : status;
+            },
+
+            // === Live svar pr. spørgsmål ===
+            // Spørgsmål i den rækkefølge eleven møder dem (bredde først fra start),
+            // derefter dem der ikke kan nås, nummereret 1..n.
+            questionNodes: function(session) {
+                const nodes = session.nodes || [];
+                const byId = {}; nodes.forEach(n => { byId[n.id] = n; });
+                const order = [], seen = {};
+                const queue = session.startNode && byId[session.startNode] ? [session.startNode] : [];
+                while (queue.length) {
+                    const id = queue.shift();
+                    if (seen[id] || !byId[id]) continue;
+                    seen[id] = true; order.push(byId[id]);
+                    const n = byId[id];
+                    (n.choices || []).forEach(c => { if (c.target) queue.push(c.target); });
+                    if (n.defaultNext) queue.push(n.defaultNext);
+                }
+                nodes.forEach(n => { if (!seen[n.id]) order.push(n); });
+                return order.filter(n => n.type !== 'end' && (n.question || (n.choices && n.choices.length)));
+            },
+
+            // Pr. spørgsmål: hvor mange har svaret og hvor mange rigtigt. Første svar
+            // pr. gennemløb tæller: afsluttede fra deltagerne, igangværende fra
+            // deres heartbeats. Ekskluderede gennemløb tæller aldrig.
+            questionStats: function(session, hold) {
+                const tally = {};
+                const qs = App.questionNodes(session);
+                qs.forEach(n => { tally[n.id] = { right: 0, answered: 0, opts: (n.choices || []).map(() => 0) }; });
+                const add = (answers, picks) => Object.keys(answers).forEach(id => {
+                    if (!tally[id]) return;
+                    tally[id].answered++;
+                    if (answers[id]) tally[id].right++;
+                    ((picks && picks[id]) || []).forEach(i => { if (i in tally[id].opts) tally[id].opts[i]++; });
+                });
+                (session.participants || []).forEach(p => {
+                    if (p.status === 'Excluded' || !p.answers) return;
+                    if (hold && (p.group || 'Hold 1') !== hold) return;
+                    add(p.answers, p.picks);
+                });
+                // Et 'done'-heartbeat er (eller bliver snart) en deltager.
+                (AppState.liveHeadsets || []).forEach(h => {
+                    if ((h.simulation || h.scenario) !== session.title || h.status === 'done' || !Array.isArray(h.answers)) return;
+                    if (hold && (h.hold || h.group || 'Hold 1') !== hold) return;
+                    const a = {}, pk = {};
+                    h.answers.forEach(x => {
+                        if (!x || typeof x.n !== 'string' || (x.n in a)) return;
+                        a[x.n] = x.c ? 1 : 0;
+                        pk[x.n] = Array.isArray(x.a) ? x.a.filter(i => Number.isInteger(i)) : [];
+                    });
+                    add(a, pk);
+                });
+                return qs.map((n, i) => Object.assign({
+                    node: n, num: i + 1,
+                    graded: (n.choices || []).some(c => c.correct === true)
+                }, tally[n.id]));
+            },
+
+            statsHolds: function(session) {
+                const set = new Set();
+                (session.participants || []).forEach(p => set.add(p.group || 'Hold 1'));
+                (AppState.liveHeadsets || []).forEach(h => { if ((h.simulation || h.scenario) === session.title) set.add(h.hold || h.group || 'Hold 1'); });
+                return Array.from(set);
+            },
+
+            questionResultText: function(q) {
+                if (!q.answered) return 'Ingen svar endnu';
+                return q.graded ? `${q.right}/${q.answered} svarede rigtigt` : `${q.answered} svar`;
+            },
+
+            questionStatsRowsHTML: function(session) {
+                const stats = App.questionStats(session, AppState.statsHold || '');
+                return stats.map(q => {
+                    const pct = q.answered ? Math.round(100 * q.right / q.answered) : 0;
+                    const bar = q.graded && q.answered
+                        ? `<div class="qbar"><i style="width:${pct}%;background:var(--green)"></i><i style="width:${100 - pct}%;background:var(--red)"></i></div>`
+                        : '<div class="qbar"></div>';
+                    return `<div class="qrow">
+                        <span class="qnum">Spørgsmål ${q.num}${q.node.questionMode === 'multi' ? ' ☑️' : ''}</span>
+                        <span class="qtext" title="${App.attr(q.node.question || q.node.title || '')}">“${App.esc(q.node.question || q.node.title || '')}”</span>
+                        <span class="qres">${App.esc(App.questionResultText(q))}</span>${bar}${App.optionChipsHTML(q)}</div>`;
+                }).join('');
+            },
+
+            // Hvilke svar klassen valgte: hver mulighed grøn hvis rigtig, rød hvis
+            // forkert (neutral uden markeret rigtigt svar), med antal.
+            optionChipsHTML: function(q) {
+                const choices = q.node.choices || [];
+                if (!choices.length) return '';
+                return '<div class="qopts">' + choices.map((c, i) => {
+                    const n = q.opts[i] || 0;
+                    const kind = !q.graded ? 'neutral' : (c.correct === true ? 'right' : 'wrong');
+                    const mark = kind === 'right' ? '✓ ' : (kind === 'wrong' ? '✗ ' : '');
+                    return `<span class="qopt ${kind}${n ? '' : ' none'}" title="${App.attr(c.label)} — valgt af ${n}">${mark}${App.esc(c.label)} <b>${n}</b></span>`;
+                }).join('') + '</div>';
+            },
+
+            holdOptionsHTML: function(session) {
+                const cur = AppState.statsHold || '';
+                return `<option value="">Alle hold</option>` + App.statsHolds(session).map(g =>
+                    `<option value="${App.attr(g)}"${g === cur ? ' selected' : ''}>${App.esc(g)}</option>`).join('');
+            },
+
+            // Hele panelet (gridvisning). Kortvisningen skifter kun rækkerne, så
+            // holdmenuen ikke genopbygges under musen ved hver poll.
+            questionStatsHTML: function(session) {
+                if (!App.questionNodes(session).length) return '';
+                return `<div class="qstats"><div class="qstats-head"><b>Svar pr. spørgsmål</b>
+                    <select onchange="App.setStatsHold(this.value)">${App.holdOptionsHTML(session)}</select>
+                    <span class="qhint">Første svar pr. headset · opdateres live</span></div>
+                    <div class="qrows">${App.questionStatsRowsHTML(session)}</div></div>`;
+            },
+
+            setStatsHold: function(hold) {
+                AppState.statsHold = hold || '';
+                if (AppState.viewMode === 'map') App.renderMapView(); else App.renderMonitorView();
+            },
+
+            formatTime: function(totalSeconds) {
+                const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+                const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+                return `${minutes}:${seconds}`;
+            },
+
+            // Toasten forsvinder efter 3 s. Disse to følger selve arbejdet, så
+            // indikatoren står, til kortet er vist.
+            showBusy: function(msg) {
+                const el = document.getElementById('busy-overlay');
+                if (!el) return;
+                const label = document.getElementById('busy-text');
+                if (label && msg) label.textContent = msg;
+                el.hidden = false;
+            },
+
+            hideBusy: function() {
+                const el = document.getElementById('busy-overlay');
+                if (el) el.hidden = true;
+            },
+
+            // Giv browseren en frame til at tegne overlayet, før det lange arbejde
+            // starter, ellers kommer det aldrig på skærmen.
+            nextPaint: function() {
+                return new Promise(function(resolve) {
+                    requestAnimationFrame(function() { requestAnimationFrame(resolve); });
+                });
+            },
+
+            showStatus: function(msg, isError = false) {
+                const status = document.getElementById('status');
+                if (!status) return;
+                
+                let statusEl = document.getElementById('status-toast');
+                if (!statusEl) {
+                    statusEl = document.createElement('div');
+                    statusEl.id = 'status-toast';
+                    statusEl.style.position = 'fixed';
+                    statusEl.style.bottom = '20px';
+                    statusEl.style.left = '50%';
+                    statusEl.style.transform = 'translateX(-50%)';
+                    statusEl.style.background = 'var(--text)';
+                    statusEl.style.color = '#fff';
+                    statusEl.style.padding = '12px 20px';
+                    statusEl.style.borderRadius = '8px';
+                    statusEl.style.zIndex = '1001';
+                    statusEl.style.boxShadow = 'var(--shadow-lg)';
+                    statusEl.style.transition = 'opacity 0.3s, transform 0.3s';
+                    statusEl.style.opacity = '0';
+                    statusEl.style.transform = 'translateX(-50%) translateY(10px)';
+                    document.body.appendChild(statusEl);
+                }
+                
+                statusEl.textContent = msg;
+                statusEl.style.background = isError ? 'var(--red)' : 'var(--text)';
+                
+                statusEl.style.opacity = '1';
+                statusEl.style.transform = 'translateX(-50%) translateY(0)';
+                
+                setTimeout(function() { 
+                    statusEl.style.opacity = '0';
+                    statusEl.style.transform = 'translateX(-50%) translateY(10px)';
+                }, 3000);
+            },
+
+            // === Live-relay (valgfri) ===
+            // Bruger cloud-relayet (Cloudflare Worker) frem for relay.py på det lokale
+            // net: samme JSON-format, men via internettet, så skolens Wi-Fi (klient-
+            // isolation, blokerede porte) ikke stopper live-sporingen.
+            // Svarer /api/ping ikke, slås live-delen fra, og CSV-import virker som før.
+            initRelay: function() { App.checkRelay(); },
+
+            // Id for dette dashboard, så to lokaler med samme simulation hver har
+            // deres egne Start/Stop og resultater. Laves én gang.
+            dashboardId: function() {
+                if (AppState._dashboardId) return AppState._dashboardId;
+                let id = '';
+                try { id = localStorage.getItem('lxr_dashboard_id') || ''; } catch (e) {}
+                if (!id) {
+                    id = 'dash-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+                    try { localStorage.setItem('lxr_dashboard_id', id); } catch (e) {}
+                }
+                return (AppState._dashboardId = id);
+            },
+
+            // Unik, også efter oprydningen har fjernet tidligere rækker.
+            newParticipantId: function(session) {
+                return `p-${session.id}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+            },
+
+            // Resultater ældre end oprydningsvinduet tages slet ikke ind, hverken
+            // live eller fra fil. Resultater uden dato beholdes som i pruneOldData().
+            isTooOld: function(iso) {
+                const t = Date.parse(iso || '');
+                return !isNaN(t) && t < Date.now() - App.RETENTION_DAYS * 24 * 60 * 60 * 1000;
+            },
+
+            // === Lærernøgle ===
+            // Har relayet en TEACHER_KEY, kræves den for at læse resultater/headsets
+            // og sende start/stop. Spørges om én gang pr. computer og huskes. Sendes
+            // som ?key= i stedet for header for at undgå CORS-preflight.
+            teacherKey: function() {
+                try { return localStorage.getItem('lxr_teacher_key') || ''; } catch (e) { return ''; }
+            },
+            relayFetch: function(path, opts) {
+                const k = App.teacherKey();
+                const url = RELAY_BASE + path + (k ? (path.indexOf('?') === -1 ? '?' : '&') + 'key=' + encodeURIComponent(k) : '');
+                return fetch(url, opts).then(r => {
+                    if (r.status === 401) { App.showTeacherKeyBox(true); throw new Error('locked'); }
+                    return r;
+                });
+            },
+            showTeacherKeyBox: function(show) {
+                const box = document.getElementById('teacher-key-box');
+                const body = document.getElementById('live-control-body');
+                const statusText = document.getElementById('relay-status-text');
+                if (!box || (!show && box.style.display === 'none')) return;
+                box.style.display = show ? 'block' : 'none';
+                if (body) body.style.display = show ? 'none' : 'block';
+                if (statusText) statusText.textContent = show
+                    ? (App.teacherKey() ? 'Forkert lærer-nøgle — prøv igen.' : 'Relayet er låst — indtast lærer-nøglen.')
+                    : 'Connected — live headset tracking is on.';
+            },
+            saveTeacherKey: function() {
+                const input = document.getElementById('teacher-key-input');
+                const k = input ? input.value.trim() : '';
+                if (!k) return;
+                try { localStorage.setItem('lxr_teacher_key', k); } catch (e) {}
+                input.value = '';
+                App.pollRelayState();
+                App.pollRelayResults();
+            },
+
+            checkRelay: async function() {
+                try {
+                    const r = await fetch(RELAY_BASE + '/api/ping', { cache: 'no-store' });
+                    AppState.relayAvailable = !!(r && r.ok);
+                } catch (e) { AppState.relayAvailable = false; }
+                const statusText = document.getElementById('relay-status-text');
+                const body = document.getElementById('live-control-body');
+                if (statusText) {
+                    statusText.textContent = AppState.relayAvailable
+                        ? 'Connected — live headset tracking is on.'
+                        : 'No relay reachable right now. CSV import still works without it.';
+                }
+                if (body) body.style.display = AppState.relayAvailable ? 'block' : 'none';
+                if (AppState.relayAvailable) {
+                    App.pollRelayState();
+                    App.pollRelayResults();
+                    if (!AppState._relayStateTimer) AppState._relayStateTimer = setInterval(App.pollRelayState, 2000);
+                    if (!AppState._relayResultsTimer) AppState._relayResultsTimer = setInterval(App.pollRelayResults, 4000);
+                }
+            },
+
+            pollRelayState: function() {
+                App.relayFetch('/api/state').then(r => r.json()).then(data => {
+                    App.showTeacherKeyBox(false);
+                    // Kun denne klasses headsets: dem dette dashboard har startet, og
+                    // dem ingen har startet endnu (venter, eller ældre Player).
+                    // Et andet lokales headsets på samme simulation vises ikke.
+                    const me = App.dashboardId();
+                    AppState.liveHeadsets = ((data && data.headsets) || []).filter(h => !h.origin || h.origin === me);
+                    App.populateGroupSelect();
+                    if (AppState.viewMode === 'map') App.renderMapView();
+                }).catch(() => {});
+            },
+
+            populateGroupSelect: function() {
+                const sel = document.getElementById('start-group-select');
+                if (!sel) return;
+                const groups = Array.from(new Set((AppState.liveHeadsets || []).map(h => h.hold || h.group || 'Hold 1')));
+                if (!groups.length) groups.push('Hold 1');
+                const prev = sel.value;
+                sel.innerHTML = groups.map(g => `<option value="${App.attr(g)}">${App.esc(g)}</option>`).join('');
+                if (groups.indexOf(prev) !== -1) sel.value = prev;
+            },
+
+            // Start/stop uden at vente på svar. Player følger kun en kommando for den
+            // simulation, den har indlæst, så det er sikkert, selvom andre kører.
+            sendCommand: function(scope, action) {
+                const session = AppState.liveSessions.find(s => s.id === AppState.activeMapId) ||
+                                AppState.liveSessions.find(s => s.id === AppState.selectedSessionId);
+                if (!session) { App.showStatus('Vælg en simulation først.', true); return; }
+                const sel = document.getElementById('start-group-select');
+                const target = scope === 'group' ? (sel ? sel.value : '') : null;
+                return App.relayFetch('/api/command', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope: scope === 'all' ? 'all' : 'group', target: target, action: action || 'start', scenario: session.title, origin: App.dashboardId() })
+                }).then(r => {
+                    if (!r.ok) throw new Error('relay ' + r.status);
+                    const verb = action === 'stop' ? 'End' : 'Start';
+                    App.showStatus(scope === 'all' ? `${verb} command sent to all headsets.` : `${verb} command sent to ${target}.`);
+                }).catch(e => App.showStatus(e.message === 'locked' ? 'Indtast lærer-nøglen først.' : 'Could not reach the relay.', true));
+            },
+
+            // Live-resultat ind på samme måde som importResults() gør med en fil
+            // (samme deltager, dubletnøgle og CSV-rækker), så manuel import ikke
+            // er nødvendig, når klassen kører live.
+            ingestLiveResult: function(parsed) {
+                if (!parsed || !Array.isArray(parsed.events)) return;
+                // Et gennemløb startet fra et andet lokales dashboard hører til dér.
+                if (parsed.origin && parsed.origin !== App.dashboardId()) return;
+                // Resultatet kan kun placeres i en session, hvis scener allerede er
+                // indlæst her. Ellers springes det over.
+                //
+                // Flere sessioner med samme titel er normalt (samme simulation kørt
+                // to gange samme dag). Vælg den senest startede, ellers kan et
+                // resultat havne i en gammel session, læreren ikke kigger på.
+                const titleMatches = AppState.liveSessions.filter(s => s.title === (parsed.simulation || parsed.scenario));
+                const session = titleMatches.length > 1
+                    ? titleMatches.reduce((newest, s) => (s.startTime || 0) > (newest.startTime || 0) ? s : newest)
+                    : titleMatches[0];
+                if (!session) return;
+                if (!session.importedKeys) session.importedKeys = [];
+                const events = parsed.events;
+                const startEv = events.find(e => e.action === 'session_start') || {};
+                const name = parsed.headsetId || startEv.headsetId || 'Unnamed headset';
+                const group = parsed.hold || parsed.group || startEv.hold || startEv.group || 'Hold 1';
+                const startedAt = startEv.started_at || null;
+                // Dashboardet læser hele relayets historik ved opstart. Uden dette
+                // ville tidligere klassers gennemløb fylde dagens session (op til 99).
+                if (App.isTooOld(parsed.finished_at || startedAt)) return;
+                const dedupeKey = [name, parsed.deviceId || '', parsed.finished_at || startedAt || ''].join('|');
+                if (session.importedKeys.indexOf(dedupeKey) !== -1) return;
+                if (session.participants.length >= session.maxParticipants) return;
+                const participant = App.runToParticipant(session, events, parsed, name, group, startedAt);
+                session.participants.push(participant);
+                session.importedKeys.push(dedupeKey);
+                session.status = 'Imported';
+                App.persistSessions();
+                App.renderSessionList();
+                if (session.id === AppState.selectedSessionId && AppState.viewMode === 'grid') App.renderMonitorView();
+                App.showStatus(`Live result received: ${name}`);
+            },
+
+            pollRelayResults: function() {
+                return App.relayFetch('/api/results?since=' + AppState.resultsSince).then(r => r.json()).then(data => {
+                    if (!data) return;
+                    (data.results || []).forEach(App.ingestLiveResult);
+                    AppState.resultsSince = data.total || AppState.resultsSince;
+                }).catch(() => {});
+            },
+
+            // Afslut kortets gennemløb nu og hent CSV, også hvis nogle headsets er
+            // væk (forladt lokalet, tomt batteri, Wi-Fi). To trin: (1) bed alle
+            // forbundne headsets på simulationen om at stoppe og sende, og vent lidt;
+            // (2) dem der ikke sender, får en række ud fra sidste heartbeat.
+            // Sessionen fjernes ikke, i modsætning til "End & Download Results".
+            collectAllNow: function() {
+                const session = AppState.liveSessions.find(s => s.id === AppState.activeMapId) ||
+                                AppState.liveSessions.find(s => s.id === AppState.selectedSessionId);
+                if (!session) { App.showStatus('Vælg en simulation først.', true); return; }
+                if (!AppState.relayAvailable) { App.showStatus('No relay connected — nothing live to collect.', true); return; }
+
+                App.showStatus('Ending session and collecting data from all headsets…');
+                App.sendCommand('all', 'stop');
+
+                if (!session.importedKeys) session.importedKeys = [];
+                let round = 0;
+                const poll = () => {
+                    round++;
+                    (App.pollRelayResults() || Promise.resolve()).then(() => {
+                        if (round < 4) { setTimeout(poll, 1500); return; }
+                        App.finishCollectAllNow(session);
+                    });
+                };
+                poll();
+            },
+
+            // Andet trin af collectAllNow(): headsets uden deltagerrække efter
+            // ventetiden (ikke færdige eller afbrudt; relayet beholder sidste
+            // heartbeat) får en markeret række ud fra sidst kendte scene/tid/hold.
+            finishCollectAllNow: function(session) {
+                const already = new Set(session.participants.map(p => p.name));
+                let added = 0;
+                (AppState.liveHeadsets || []).forEach(h => {
+                    if ((h.simulation || h.scenario) !== session.title || already.has(h.headsetId)) return;
+                    const nodeIndex = Math.max(0, session.nodes.findIndex(n => n.id === h.nodeId));
+                    const status = h.online ? 'Incomplete' : 'Disconnected';
+                    session.participants.push({
+                        id: App.newParticipantId(session),
+                        name: h.headsetId, group: h.hold || h.group || 'Hold 1', status: status,
+                        nodeIndex: nodeIndex, sessionTime: Math.round(h.sessionTimeSec || 0),
+                        startedAtISO: null, finishedAtISO: null, answered: 0, correct: 0
+                    });
+                    already.add(h.headsetId);
+                    App.logEvent(session.id, {
+                        type: 'COLLECTED', participant: h.headsetId, group: h.hold || h.group || 'Hold 1',
+                        nodeTitle: h.nodeTitle || '',
+                        choice: h.online ? 'still connected, had not finished' : 'disconnected before finishing',
+                        time: h.sessionTimeSec || 0
+                    });
+                    added++;
+                });
+                session.status = 'Imported';
+                App.persistSessions();
+                App.renderSessionList();
+                if (session.id === AppState.selectedSessionId && AppState.viewMode === 'grid') App.renderMonitorView();
+                App.showStatus(added ? `Collected ${added} headset(s) from last known status. Downloading CSV…` : 'All headsets already reported in. Downloading CSV…');
+                App.downloadSessionData(session);
+            },
+
+            // === Livekort (op til 4 fastgjorte simulationer) ===
+            togglePinToMap: function(sessionId) {
+                const idx = AppState.pinnedMapIds.indexOf(sessionId);
+                if (idx !== -1) {
+                    AppState.pinnedMapIds.splice(idx, 1);
+                    if (AppState.activeMapId === sessionId) App.switchToGrid();
+                } else {
+                    if (AppState.pinnedMapIds.length >= 4) {
+                        App.showStatus('Up to 4 maps can be pinned at once — unpin one first.', true);
+                        return;
+                    }
+                    AppState.pinnedMapIds.push(sessionId);
+                }
+                App.renderSessionList();
+                App.renderMapTabs();
+            },
+
+            renderMapTabs: function() {
+                const bar = document.getElementById('mapTabs');
+                if (!bar) return;
+                if (!AppState.pinnedMapIds.length) {
+                    bar.style.display = 'none';
+                    if (AppState.viewMode === 'map') App.switchToGrid();
+                    return;
+                }
+                bar.style.display = 'flex';
+                let html = '';
+                AppState.pinnedMapIds.forEach(id => {
+                    const s = AppState.liveSessions.find(x => x.id === id);
+                    if (!s) return;
+                    const active = AppState.viewMode === 'map' && AppState.activeMapId === id;
+                    html += `<div class="map-tab ${active ? 'active' : ''}" onclick="App.switchToMap('${id}')">${App.esc(s.title)}</div>`;
+                });
+                html += `<div class="map-tab ${AppState.viewMode === 'grid' ? 'active' : ''}" onclick="App.switchToGrid()">🗂 Grid</div>`;
+                bar.innerHTML = html;
+            },
+
+            switchToMap: function(sessionId) {
+                AppState.viewMode = 'map';
+                AppState.activeMapId = sessionId;
+                document.getElementById('canvas').style.display = 'none';
+                document.getElementById('mapLegend').style.display = 'flex';
+                document.getElementById('mapCanvasOuter').style.display = 'block';
+                App.renderMapTabs();
+                App.renderMapView();
+            },
+
+            switchToGrid: function() {
+                AppState.viewMode = 'grid';
+                document.getElementById('canvas').style.display = 'block';
+                document.getElementById('mapLegend').style.display = 'none';
+                document.getElementById('mapCanvasOuter').style.display = 'none';
+                document.getElementById('mapStats').style.display = 'none';
+                App.renderMapTabs();
+                App.renderMonitorView();
+            },
+
+            // Tegner simulationen med scenerne præcis hvor Builder placerede dem
+            // (node.x/node.y, samme 160x120-boks) og en nummereret prik pr. headset.
+            // Læreren kender kortet fra Builder.
+            renderMapView: function() {
+                const session = AppState.liveSessions.find(s => s.id === AppState.activeMapId);
+                const host = document.getElementById('mapCanvasInner');
+                const statsEl = document.getElementById('mapStats');
+                if (!session || !host) { if (host) host.innerHTML = ''; if (statsEl) statsEl.style.display = 'none'; return; }
+                if (statsEl) {
+                    const hasQ = App.questionNodes(session).length > 0;
+                    statsEl.style.display = hasQ ? 'block' : 'none';
+                    if (hasQ) {
+                        const sel = document.getElementById('mapStatsHold');
+                        const opts = App.holdOptionsHTML(session);
+                        if (sel && sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; }
+                        document.getElementById('mapStatsRows').innerHTML = App.questionStatsRowsHTML(session);
+                        const hs = App.perHeadsetAnswers(session, AppState.statsHold || '');
+                        document.getElementById('mapPerHeadsetCount').textContent = hs.length;
+                        document.getElementById('mapPerHeadsetBody').innerHTML = App.perHeadsetTableHTML(session, hs);
+                    }
+                }
+                const qById = {};
+                App.questionStats(session, AppState.statsHold || '').forEach(q => { qById[q.node.id] = q; });
+                // x/y kommer fra den uploadede fil; tving til tal, så en manipuleret
+                // fil ikke kan indsætte markup via style.
+                const nodes = (session.nodes || []).map(n => Object.assign({}, n, { x: Number(n.x) || 0, y: Number(n.y) || 0 }));
+                let maxX = 400, maxY = 300;
+                nodes.forEach(n => { maxX = Math.max(maxX, (n.x || 0) + 220); maxY = Math.max(maxY, (n.y || 0) + 220); });
+                host.style.width = maxX + 'px';
+                host.style.height = maxY + 'px';
+
+                let svg = `<svg width="${maxX}" height="${maxY}" style="position:absolute;top:0;left:0;pointer-events:none">`;
+                nodes.forEach(n => {
+                    const targets = [];
+                    // Flervalg navigerer ikke; scenen går til defaultNext.
+                    if (n.questionMode !== 'multi') (n.choices || []).forEach(c => { if (c.target) targets.push(c.target); });
+                    if (n.defaultNext) targets.push(n.defaultNext);
+                    targets.forEach(tid => {
+                        const t = nodes.find(x => x.id === tid);
+                        if (!t) return;
+                        const x1 = (n.x || 0) + 160, y1 = (n.y || 0) + 60;
+                        const x2 = (t.x || 0), y2 = (t.y || 0) + 60;
+                        const dx = x2 - x1;
+                        const c1x = x1 + dx * 0.5, c1y = y1, c2x = x2 - dx * 0.5, c2y = y2;
+                        svg += `<path d="M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}" stroke="#1a7f37" stroke-width="2" stroke-dasharray="5,4" fill="none" opacity="0.6"/>`;
+                    });
+                });
+                svg += '</svg>';
+
+                let boxes = '';
+                nodes.forEach(n => {
+                    const isStart = session.startNode === n.id;
+                    // Scenefarve fra Builder: grøn = rigtigt udfald, rød = forkert.
+                    const scene = n.sceneColor === 'green' || n.sceneColor === 'red' ? ' scene-' + n.sceneColor : '';
+                    const q = qById[n.id];
+                    let qHtml = '';
+                    if (q) {
+                        const pct = q.answered ? Math.round(100 * q.right / q.answered) : 0;
+                        const split = (n.choices || []).map((c, i) => `${q.graded ? (c.correct === true ? '✓' : '✗') : '•'} ${c.label}: ${q.opts[i] || 0}`).join('\n');
+                        qHtml = `<div class="map-node-q" title="${App.attr((n.question || '') + '\n\n' + split)}">Spm. ${q.num}: ${App.esc(n.question || '')}</div>
+                            <div class="map-node-res">${App.esc(App.questionResultText(q))}</div>` +
+                            (q.graded && q.answered ? `<div class="qbar map-node-bar"><i style="width:${pct}%;background:var(--green)"></i><i style="width:${100 - pct}%;background:var(--red)"></i></div>` : '');
+                    }
+                    boxes += `<div class="map-node ${isStart ? 'start' : ''}${scene}" style="left:${n.x || 0}px; top:${n.y || 0}px">
+                        <div class="map-node-title">${App.esc(n.title || '')}</div>
+                        ${q ? qHtml : `<div class="map-node-type">${App.esc((n.type || 'video').toUpperCase())}${scene ? (n.sceneColor === 'green' ? ' · ✓ rigtig' : ' · ✗ forkert') : ''}</div>`}
+                    </div>`;
+                });
+
+                // Kortet får prikker fra to kilder:
+                //   1. AppState.liveHeadsets: heartbeats fra relayet, mens klassen kører.
+                //   2. session.participants: de gemte resultater (fra fil eller live,
+                //      når et headset er færdigt), så kortet ikke er tomt bagefter.
+                // Deltagere der allerede har et live-heartbeat, springes over, så
+                // ingen får to prikker.
+                const liveForSession = (AppState.liveHeadsets || []).filter(h => (h.simulation || h.scenario) === session.title);
+                const liveNames = new Set(liveForSession.map(h => h.headsetId));
+
+                const byNode = {};
+                const addMarker = (nodeId, marker) => { (byNode[nodeId] = byNode[nodeId] || []).push(marker); };
+
+                liveForSession.forEach(h => {
+                    const cls = !h.online ? 'offline' : (h.status === 'waiting' ? 'waiting' : (h.status === 'done' ? 'done' : ''));
+                    addMarker(h.nodeId, {
+                        label: (h.headsetId || '?').replace(/[^0-9A-Za-z]/g, '').slice(-3) || '#',
+                        cls, tooltip: `${h.headsetId} — ${h.nodeTitle || ''} (live)` + App.picksTooltip(session, App.livePicks(h))
+                    });
+                });
+
+                (session.participants || []).forEach(p => {
+                    if (liveNames.has(p.name)) return; // allerede tegnet fra live-data
+                    const node = nodes[p.nodeIndex];
+                    if (!node) return;
+                    const cls = p.status === 'Done' ? 'done' : ((p.status === 'Incomplete' || p.status === 'Excluded') ? 'offline' : 'waiting');
+                    addMarker(node.id, {
+                        label: (p.name || '?').replace(/[^0-9A-Za-z]/g, '').slice(-3) || '#',
+                        cls, tooltip: `${p.name} — ${node.title || ''} (${App.statusLabel(p.status) || 'imported'})` + App.picksTooltip(session, p.picks)
+                    });
+                });
+
+                let dots = '';
+                Object.keys(byNode).forEach(nodeId => {
+                    const node = nodes.find(n => n.id === nodeId);
+                    const baseX = node ? (node.x || 0) + 80 : 20;
+                    // På en spørgsmålsscene står spørgsmålet midt i boksen, så
+                    // prikkerne sidder på bundkanten.
+                    const baseY = node ? (node.y || 0) + (qById[nodeId] ? 120 : 60) : 20;
+                    byNode[nodeId].forEach((m, i) => {
+                        const offset = i * 24;
+                        dots += `<div class="map-dot ${m.cls}" style="left:${baseX - 14 + offset}px; top:${baseY - 14}px" title="${App.attr(m.tooltip)}">${App.esc(m.label)}</div>`;
+                    });
+                });
+
+                host.innerHTML = svg + boxes + dots;
+
+                const banner = document.getElementById('mapAllDoneBanner');
+                if (banner) {
+                    const stillLive = liveForSession.filter(h => h.online !== false);
+                    const allDone = stillLive.length > 0 && stillLive.every(h => h.status === 'done');
+                    banner.style.display = allDone ? 'block' : 'none';
+                    if (allDone) {
+                        banner.textContent = `✓ All ${liveForSession.length} headset(s) have finished — ready to collect results.`;
+                    }
+                }
+            },
+        };
+
+        // --- Opstart ---
+        document.addEventListener('DOMContentLoaded', App.init);
+    </script>
+</body>
+</html>

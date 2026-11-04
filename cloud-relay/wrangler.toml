@@ -1,0 +1,13 @@
+name = "laerbarxr-relay"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# SQLite-baserede Durable Objects er med i Workers Free (KV-baserede er ikke),
+# derfor new_sqlite_classes og ikke new_classes.
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "RelayState"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayState"]

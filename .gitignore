@@ -1,0 +1,6 @@
+results/
+.DS_Store
+builder-test/
+*.lxr
+.claude/
+__pycache__/
